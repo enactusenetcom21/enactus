@@ -1,0 +1,414 @@
+// ===== Respect reduced-motion preference =====
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ===== Animated bird cursor =====
+(function () {
+  if (prefersReducedMotion || !window.matchMedia('(pointer:fine)').matches) return;
+  const cursor = document.createElement('div');
+  cursor.className = 'animated-cursor';
+  cursor.setAttribute('aria-hidden', 'true');
+  cursor.innerHTML = '<img src="assets/birdlogo-cursor.png" alt="">';
+  document.body.appendChild(cursor);
+
+  let frame = 0;
+  let x = 0;
+  let y = 0;
+  const setActive = (active) => {
+    document.body.classList.toggle('show-animated-cursor', active);
+    cursor.classList.toggle('is-visible', active);
+  };
+  document.addEventListener('mousemove', (event) => {
+    x = event.clientX;
+    y = event.clientY;
+    if (!frame) {
+      frame = requestAnimationFrame(() => {
+        cursor.style.left = `${x}px`;
+        cursor.style.top = `${y}px`;
+        frame = 0;
+      });
+    }
+  }, { passive: true });
+  document.addEventListener('pointerover', (event) => {
+    const interactive = event.target.closest('.card, .team-card, .alumni-card, button');
+    if (interactive) setActive(true);
+  });
+  document.addEventListener('pointerout', (event) => {
+    const interactive = event.target.closest('.card, .team-card, .alumni-card, button');
+    const nextInteractive = event.relatedTarget instanceof Element
+      ? event.relatedTarget.closest('.card, .team-card, .alumni-card, button')
+      : null;
+    if (interactive && interactive !== nextInteractive) setActive(false);
+  });
+  document.addEventListener('mouseleave', () => setActive(false));
+})();
+
+// ===== Scroll progress bar =====
+(function () {
+  const bar = document.createElement('div');
+  bar.className = 'scroll-progress';
+  document.body.appendChild(bar);
+  const update = () => {
+    const h = document.documentElement;
+    const scrolled = h.scrollTop;
+    const max = h.scrollHeight - h.clientHeight;
+    bar.style.width = max > 0 ? `${(scrolled / max) * 100}%` : '0%';
+  };
+  document.addEventListener('scroll', update, { passive: true });
+  update();
+})();
+
+// ===== Header shrink on scroll =====
+(function () {
+  const header = document.querySelector('.site-header');
+  if (!header) return;
+  const toggle = () => header.classList.toggle('scrolled', window.scrollY > 40);
+  document.addEventListener('scroll', toggle, { passive: true });
+  toggle();
+})();
+
+// ===== Cursor-reactive glow in hero =====
+(function () {
+  const hero = document.querySelector('.hero');
+  if (!hero || prefersReducedMotion) return;
+  hero.addEventListener('mousemove', (e) => {
+    const rect = hero.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    hero.style.setProperty('--mx', `${x}%`);
+    hero.style.setProperty('--my', `${y}%`);
+  });
+})();
+
+// ===== Magnetic buttons =====
+(function () {
+  if (prefersReducedMotion) return;
+  document.querySelectorAll('.btn').forEach(btn => {
+    btn.addEventListener('mousemove', (e) => {
+      const rect = btn.getBoundingClientRect();
+      const relX = e.clientX - rect.left - rect.width / 2;
+      const relY = e.clientY - rect.top - rect.height / 2;
+      btn.style.setProperty('--mx', `${relX * 0.12}px`);
+      btn.style.setProperty('--my', `${relY * 0.12}px`);
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.setProperty('--mx', '0px');
+      btn.style.setProperty('--my', '0px');
+    });
+  });
+})();
+
+// ===== Count-up numbers (hero stats + stats bar) =====
+(function () {
+  const targets = document.querySelectorAll('.hero-stats strong, .stats-bar strong');
+  if (!targets.length) return;
+
+  const animateCount = (el) => {
+    const raw = el.textContent.trim();
+    const match = raw.match(/^(\D*)(\d[\d\s]*)(\D*)$/);
+    if (!match) return; // no digits found, leave as-is
+    const [, prefix, digits, suffix] = match;
+    const target = parseInt(digits.replace(/\s/g, ''), 10);
+    if (Number.isNaN(target) || prefersReducedMotion) return;
+
+    const duration = 1200;
+    const start = performance.now();
+    const step = (now) => {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const value = Math.round(target * eased);
+      el.textContent = `${prefix}${value}${suffix}`;
+      if (progress < 1) requestAnimationFrame(step);
+      else el.textContent = raw; // restore exact original formatting
+    };
+    requestAnimationFrame(step);
+  };
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          animateCount(entry.target);
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.6 });
+    targets.forEach(el => io.observe(el));
+  }
+})();
+
+// ===== Nav mobile toggle =====
+const navToggle = document.querySelector('.nav-toggle');
+const navLinks = document.querySelector('.nav-links');
+if (navToggle && navLinks) {
+  navToggle.addEventListener('click', () => {
+    navLinks.classList.toggle('open');
+    navToggle.classList.toggle('is-open');
+  });
+  navLinks.querySelectorAll('a').forEach(a => a.addEventListener('click', () => {
+    navLinks.classList.remove('open');
+  }));
+}
+
+// ===== Highlight active nav link =====
+(function () {
+  const path = location.pathname.split('/').pop() || 'index.html';
+  document.querySelectorAll('.nav-links a').forEach(a => {
+    const href = a.getAttribute('href');
+    if (href === path || (path === '' && href === 'index.html')) {
+      a.classList.add('active');
+    }
+  });
+})();
+
+// ===== Scroll reveal =====
+const revealEls = document.querySelectorAll('.reveal');
+
+// Stagger: elements sharing the same parent get an incremental delay,
+// so grids (cards, pillars, values...) cascade in instead of popping at once.
+(function () {
+  const groups = new Map();
+  revealEls.forEach(el => {
+    const parent = el.parentElement;
+    const idx = groups.has(parent) ? groups.get(parent) : 0;
+    groups.set(parent, idx + 1);
+    el.style.setProperty('--d', `${Math.min(idx, 5) * 90}ms`);
+  });
+})();
+
+if ('IntersectionObserver' in window && revealEls.length) {
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('in');
+        io.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15 });
+  revealEls.forEach(el => io.observe(el));
+} else {
+  revealEls.forEach(el => el.classList.add('in'));
+}
+
+// ===== Generic filter buttons (projects page) =====
+function initFilters(filterSelector, cardSelector) {
+  const buttons = document.querySelectorAll(filterSelector);
+  const cards = document.querySelectorAll(cardSelector);
+  if (!buttons.length) return;
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const cat = btn.dataset.filter;
+      cards.forEach(card => {
+        const show = cat === 'all' || card.dataset.cat === cat;
+        card.classList.toggle('hide', !show);
+      });
+    });
+  });
+}
+initFilters('.filters button', '.card[data-cat]');
+
+// ===== Generic tabs (team page departments) =====
+function initTabs(tabSelector, panelSelector) {
+  const tabs = document.querySelectorAll(tabSelector);
+  const panels = document.querySelectorAll(panelSelector);
+  if (!tabs.length) return;
+  tabs.forEach(tab => {
+    if (tab.disabled) return;
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      panels.forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.tab).classList.add('active');
+    });
+  });
+}
+initTabs('.dept-tabs button', '.team-panel:not(.board-panel)');
+initTabs('.gen-rail button', '.gen-panel');
+
+// ===== Mouse-wheel scrolling for the generation rail =====
+(function () {
+  const rail = document.querySelector('.gen-rail');
+  if (!rail) return;
+  rail.addEventListener('wheel', (event) => {
+    if (rail.scrollWidth <= rail.clientWidth) return;
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    event.preventDefault();
+    rail.scrollLeft += event.deltaY;
+  }, { passive: false });
+
+  const scrollAmount = () => Math.max(rail.clientWidth * 0.7, 180);
+  document.querySelector('.gen-scroll-left')?.addEventListener('click', () => {
+    rail.scrollBy({ left: -scrollAmount(), behavior: 'smooth' });
+  });
+  document.querySelector('.gen-scroll-right')?.addEventListener('click', () => {
+    rail.scrollBy({ left: scrollAmount(), behavior: 'smooth' });
+  });
+})();
+
+// ===== Hall of fame expansion =====
+(function () {
+  const toggle = document.querySelector('.achievements-toggle');
+  const grid = document.querySelector('.trophy-grid');
+  if (!toggle || !grid) return;
+  toggle.addEventListener('click', () => {
+    const expanded = grid.classList.toggle('is-expanded');
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.textContent = expanded ? 'Show fewer achievements' : 'Show more achievements';
+  });
+})();
+
+// ===== Global team image viewer =====
+(function () {
+  const viewer = document.querySelector('#image-viewer');
+  const viewerImage = document.querySelector('#image-viewer-image');
+  const viewerCaption = document.querySelector('#image-viewer-caption');
+  if (!viewer || !viewerImage || !viewerCaption) return;
+
+  const closeViewer = () => {
+    viewer.hidden = true;
+    viewerImage.src = '';
+    document.body.style.overflow = '';
+  };
+
+  document.querySelectorAll('.gen-panel .media-item[data-caption^="Global team showcase"]').forEach((card) => {
+    card.addEventListener('click', () => {
+      const source = card.dataset.src;
+      if (!source) return;
+      viewerImage.src = source;
+      viewerImage.alt = card.querySelector('img')?.alt || card.dataset.caption;
+      viewerCaption.textContent = card.dataset.caption;
+      viewer.hidden = false;
+      document.body.style.overflow = 'hidden';
+    });
+  });
+
+  viewer.querySelector('.image-viewer-close').addEventListener('click', closeViewer);
+  viewer.addEventListener('click', (event) => {
+    if (event.target === viewer) closeViewer();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !viewer.hidden) closeViewer();
+  });
+})();
+
+// ===== Event article modals =====
+(function () {
+  const openButton = document.querySelector('#open-event-modal');
+  const modal = document.querySelector('#event-modal');
+  if (!openButton || !modal) return;
+  const modalCategory = modal.querySelector('.card-cat');
+  const modalTitle = modal.querySelector('#event-modal-title');
+  const modalPhoto = modal.querySelector('.event-modal-photo');
+  const modalDetails = modal.querySelector('.event-modal-details');
+  const modalAction = modal.querySelector('.event-modal-action');
+  const featuredCategory = modalCategory.textContent;
+  const featuredTitle = modalTitle.textContent;
+  const featuredPhoto = modalPhoto.src;
+  const featuredPhotoAlt = modalPhoto.alt;
+  const featuredDetails = modalDetails.innerHTML;
+
+  const openModal = (source) => {
+    const card = source.closest('.card');
+    if (card) {
+      const eventActionUrl = card.dataset.eventActionUrl;
+      modalCategory.textContent = card.querySelector('.card-cat').textContent;
+      modalTitle.textContent = card.querySelector('h3').textContent;
+      modalPhoto.src = eventActionUrl ? card.querySelector('img').src : 'assets/birdlogo.png';
+      modalPhoto.alt = eventActionUrl ? card.querySelector('h3').textContent : 'Enactus ENET’com';
+      modalDetails.innerHTML = `<p>${card.dataset.eventDetail || card.querySelector('p').textContent}</p>`;
+      modalAction.hidden = !eventActionUrl;
+      if (eventActionUrl) {
+        modalAction.textContent = card.dataset.eventActionLabel || 'Learn more';
+        modalAction.href = eventActionUrl;
+      }
+    } else {
+      modalCategory.textContent = featuredCategory;
+      modalTitle.textContent = featuredTitle;
+      modalPhoto.src = featuredPhoto;
+      modalPhoto.alt = featuredPhotoAlt;
+      modalAction.hidden = false;
+      modalAction.href = 'https://docs.google.com/forms/d/e/1FAIpQLScJ8QoQlRyZf1b0CI-XTBsQMM8wDdGDAWmRCfLM9GF5YRqsVQ/viewform';
+      modalAction.textContent = 'Take a seat';
+      modalDetails.innerHTML = featuredDetails;
+    }
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+  };
+  const closeModal = () => {
+    modal.hidden = true;
+    document.body.style.overflow = '';
+  };
+  openButton.addEventListener('click', () => openModal(openButton));
+  document.querySelectorAll('.card-link').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      openModal(link);
+    });
+  });
+  modal.querySelectorAll('[data-close-event-modal]').forEach((element) => {
+    element.addEventListener('click', closeModal);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.hidden) closeModal();
+  });
+})();
+// ===== EmailJS Contact Form =====
+
+const contactForm = document.getElementById("contact-form");
+
+if (contactForm) {
+
+    contactForm.addEventListener("submit", function(e) {
+
+        e.preventDefault();
+
+        const btn = contactForm.querySelector("button[type='submit']");
+        const originalText = btn.textContent;
+
+        btn.disabled = true;
+        btn.textContent = "Sending...";
+
+        emailjs.send("service_yesvt3n", "template_qct1j15", {
+
+            first_name: document.getElementById("fname").value,
+
+            last_name: document.getElementById("lname").value,
+
+            email: document.getElementById("email").value,
+
+            department: document.getElementById("dept").value,
+
+            message: document.getElementById("message").value
+
+        })
+
+        .then(function () {
+
+            btn.textContent = "✅ Message Sent!";
+
+            contactForm.reset();
+
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }, 2500);
+
+        })
+
+        .catch(function(error) {
+
+            console.error(error);
+
+            btn.textContent = "❌ Failed";
+
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }, 2500);
+
+        });
+
+    });
+
+}
